@@ -1,42 +1,51 @@
-# 自动构建 VS Code 扩展（运行 vsce package 生成 .vsix）
+# 自动构建 VS Code 扩展，并自动创建 Release 上传 .vsix
 name: Build Extension
 
 on:
   push:
     branches: [ "master" ]
-  pull_request:
-    branches: [ "master" ]
-  release:
-    types: [ published ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-        with:
-          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '20.x'
 
+      - name: Get version from package.json
+        id: version
+        run: echo "VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_OUTPUT
+
+      - name: Check if tag already exists
+        id: tag_check
+        run: |
+          git fetch --tags --force 2>/dev/null || true
+          if git rev-parse "v${{ steps.version.outputs.VERSION }}" >/dev/null 2>&1; then
+            echo "exists=true" >> $GITHUB_OUTPUT
+          else
+            echo "exists=false" >> $GITHUB_OUTPUT
+          fi
+
       - name: Package extension (.vsix)
         run: npx vsce package
 
       - name: Upload .vsix artifact
-        if: github.event_name != 'release'
         uses: actions/upload-artifact@v4
         with:
           name: extension-vsix
           path: '*.vsix'
 
-      - name: Upload .vsix to Release
-        if: github.event_name == 'release'
+      - name: Create Release and upload .vsix
+        if: steps.tag_check.outputs.exists == 'false'
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: ${{ github.event.release.tag_name }}
+          tag_name: v${{ steps.version.outputs.VERSION }}
+          name: Release v${{ steps.version.outputs.VERSION }}
           files: '*.vsix'
+          generate_release_notes: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
