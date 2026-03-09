@@ -6,12 +6,16 @@ on:
     branches: [ "master" ]
   pull_request:
     branches: [ "master" ]
+  release:
+    types: [ published ]
 
 jobs:
   build:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event_name == 'release' && github.event.release.tag_name || github.sha }}
 
       - name: Setup Node.js
         uses: actions/setup-node@v4
@@ -22,7 +26,17 @@ jobs:
         run: npx vsce package
 
       - name: Upload .vsix artifact
+        if: github.event_name != 'release'
         uses: actions/upload-artifact@v4
         with:
           name: extension-vsix
           path: '*.vsix'
+
+      - name: Upload .vsix to Release
+        if: github.event_name == 'release'
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.release.tag_name }}
+          files: '*.vsix'
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
